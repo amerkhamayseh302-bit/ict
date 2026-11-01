@@ -1,0 +1,26 @@
+{
+  "siteName": "ICT Community",
+  "tagline": "Technology resources and learning opportunities in one place",
+  "nav": {
+    "home": "Home",
+    "courses": "Courses",
+    "tools": "AI tools",
+    "resources": "Resources",
+    "opportunities": "Opportunities",
+    "events": "Events",
+    "about": "About",
+    "contact": "Contact"
+  },
+  "search": "Search courses, tools, or opportunities...",
+  "searchButton": "Search",
+  "browse": "Browse all",
+  "featured": "Community picks",
+  "latest": "Recently added",
+  "empty": "No matching results. Try different keywords or categories.",
+  "open": "Open source",
+  "details": "Details",
+  "free": "Free",
+  "footer": "A community sharing knowledge and technology opportunities.",
+  "language": "العربية",
+  "allCategories": "All categories"
+}

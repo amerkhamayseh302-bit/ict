@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+build/
+coverage/
+.vercel/
+.agents/
+AGENTS.md
+skills-lock.json
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.log
+next-env.d.ts
+.DS_Store
+Thumbs.db
