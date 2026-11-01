@@ -5,6 +5,9 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { isLocale } from "@/lib/i18n/dictionary";
 import "../globals.css";
 
+// Read community navigation and content from the persistent store on each request.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: { default: "ICT Community | مجتمع ICT", template: "%s | ICT Community" },
   description: "مصادر تقنية وفرص تعلّم في مكان واحد.",

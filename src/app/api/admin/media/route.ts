@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
   const limit = consumeRateLimit(request, "admin-media-upload", 10, 10 * 60 * 1000);
   if (!limit.allowed) return rateLimitResponse(limit.retryAfterSeconds);
   try {
-    const form = await readFormDataBody(request, 27 * 1024 * 1024);
+    // [SECURITY FIX]: Stay below Vercel's serverless request-body ceiling; larger totals need signed direct uploads.
+    const form = await readFormDataBody(request, 4 * 1024 * 1024);
     if (!form.ok) return badRequestResponse(form.status, "بيانات رفع الصور غير صالحة أو كبيرة جدًا.");
     const entries = form.value.getAll("files");
     if (!entries.length || entries.length > 5 || entries.some((entry) => !(entry instanceof File))) {
@@ -29,8 +30,8 @@ export async function POST(request: NextRequest) {
     }
     const files = entries as File[];
     const totalSize = files.reduce((total, file) => total + file.size, 0);
-    if (files.some((file) => file.size <= 0 || file.size > 8 * 1024 * 1024) || totalSize > 25 * 1024 * 1024) {
-      return badRequestResponse(413, "الحد الأقصى للصورة 8 ميغابايت، وللرفع الواحد 25 ميغابايت.");
+    if (files.some((file) => file.size <= 0 || file.size > 3 * 1024 * 1024) || totalSize > 3_500 * 1024) {
+      return badRequestResponse(413, "الحد الأقصى للصورة 3 ميغابايت، وللرفع الواحد 3.5 ميغابايت على الاستضافة الحالية.");
     }
     const verified = await Promise.all(files.map(inspectImageFile));
     if (verified.some((image) => image === null)) {

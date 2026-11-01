@@ -957,8 +957,8 @@ export function AdminDashboard() {
               <div className="admin-local-note">
                 <WandSparkles size={17} />
                 <p>
-                  <b>API محلي:</b> الصور محفوظة على خادم الموقع ويمكن استخدامها
-                  في محتوى الموقع. النسخ يضع الصورة في الحافظة بصيغة PNG.
+                  <b>تخزين سحابي:</b> الصور محفوظة في Supabase ويمكن استخدامها
+                  في محتوى الموقع. الحد الأقصى 3 ميغابايت للصورة. النسخ يضع الصورة في الحافظة بصيغة PNG.
                 </p>
                 <button
                   onClick={(event) =>
@@ -993,15 +993,14 @@ export function AdminDashboard() {
                   أو اضغط زر «اختيار صور» أو الصق صورة باستخدام Ctrl + V
                 </small>
                 <small>
-                  يدعم صيغ الصور التي يفتحها المتصفح مثل PNG وJPG وWebP وGIF
-                  وSVG
+                  الصيغ المدعومة: PNG وJPG وWebP وGIF وBMP وTIFF وAVIF
                 </small>
               </div>
               <div className="media-library-heading">
                 <h2>
                   كل الصور <small>{assets.length}</small>
                 </h2>
-                <span>تُحفظ الملفات داخل هذا المتصفح</span>
+                <span>تُحفظ الملفات في مساحة التخزين السحابية</span>
               </div>
               {assets.length ? (
                 <div className="media-grid">

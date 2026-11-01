@@ -1,7 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { createAdminSupabaseClient } from "@/lib/admin-supabase";
 
 export type CommunityPlatform = "whatsapp" | "telegram" | "other";
 
@@ -44,24 +43,36 @@ export const defaultCommunityLinks: CommunityLink[] = [
   },
 ];
 
-const communityLinksFile = path.join(
-  process.cwd(),
-  "data",
-  "community-links.json",
-);
-
 export async function getCommunityLinks(): Promise<CommunityLink[]> {
-  try {
-    return JSON.parse(await readFile(communityLinksFile, "utf8")) as CommunityLink[];
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return defaultCommunityLinks;
-    }
-    throw error;
-  }
+  const client = createAdminSupabaseClient();
+  if (!client) return defaultCommunityLinks;
+  const { data, error } = await client
+    .from("community_links")
+    .select("id, platform, title, title_en, url")
+    .order("position", { ascending: true });
+  if (error) throw error;
+  if (!data?.length) return defaultCommunityLinks;
+  return data.map((row) => ({
+    id: row.id as string,
+    platform: row.platform as CommunityPlatform,
+    title: row.title as string,
+    titleEn: row.title_en as string,
+    url: row.url as string,
+  }));
 }
 
 export async function saveCommunityLinks(items: CommunityLink[]) {
-  await mkdir(path.dirname(communityLinksFile), { recursive: true });
-  await writeFile(communityLinksFile, `${JSON.stringify(items, null, 2)}\n`, "utf8");
+  const client = createAdminSupabaseClient();
+  if (!client) throw new Error("Supabase server configuration is missing.");
+  const { error } = await client.rpc("replace_community_links", {
+    links: items.map((item, position) => ({
+      id: item.id,
+      platform: item.platform,
+      title: item.title,
+      title_en: item.titleEn,
+      url: item.url,
+      position,
+    })),
+  });
+  if (error) throw error;
 }

@@ -1,27 +1,14 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { createAdminSupabaseClient } from "@/lib/admin-supabase";
 
+const bucket = "ict-media";
 export type MediaRecord = { id: string; name: string; type: string; size: number; createdAt: string };
 export type VerifiedImage = { bytes: Uint8Array; type: string };
-const dataDirectory = path.join(process.cwd(), "data");
-const uploadsDirectory = path.join(dataDirectory, "uploads");
-const mediaFile = path.join(dataDirectory, "media.json");
-
-export async function listMedia(): Promise<MediaRecord[]> {
-  try {
-    return (JSON.parse(await readFile(mediaFile, "utf8")) as MediaRecord[]).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
 
 function sniffImageType(bytes: Uint8Array): string | null {
-  const ascii = (start: number, length: number) =>
-    String.fromCharCode(...bytes.subarray(start, start + length));
+  const ascii = (start: number, length: number) => String.fromCharCode(...bytes.subarray(start, start + length));
   if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)) return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.length >= 6 && ["GIF87a", "GIF89a"].includes(ascii(0, 6))) return "image/gif";
@@ -33,38 +20,70 @@ function sniffImageType(bytes: Uint8Array): string | null {
 }
 
 export async function inspectImageFile(file: File): Promise<VerifiedImage | null> {
-  // [SECURITY FIX]: Treat the browser-provided MIME type as untrusted; identify content from file signatures.
+  // [SECURITY FIX]: Verify image signatures instead of trusting the browser supplied MIME type.
   const bytes = new Uint8Array(await file.arrayBuffer());
   const type = sniffImageType(bytes);
   return type ? { bytes, type } : null;
 }
 
+export async function listMedia(): Promise<MediaRecord[]> {
+  const client = createAdminSupabaseClient();
+  if (!client) throw new Error("Supabase server configuration is missing.");
+  const { data, error } = await client.from("media_assets").select("id, name, type, size, created_at").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({ id: row.id as string, name: row.name as string, type: row.type as string, size: Number(row.size), createdAt: row.created_at as string }));
+}
+
 export async function storeMedia(file: File, verifiedImage: VerifiedImage): Promise<MediaRecord> {
-  await mkdir(uploadsDirectory, { recursive: true });
+  const client = createAdminSupabaseClient();
+  if (!client) throw new Error("Supabase server configuration is missing.");
   const safeName = file.name.replace(/\\/g, "/").split("/").pop()?.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 150) || "image";
   const id = randomUUID();
-  const record: MediaRecord = { id, name: safeName, type: verifiedImage.type, size: verifiedImage.bytes.byteLength, createdAt: new Date().toISOString() };
-  const records = await listMedia();
-  await writeFile(path.join(uploadsDirectory, id), Buffer.from(verifiedImage.bytes), { flag: "wx" });
-  await writeFile(mediaFile, `${JSON.stringify([record, ...records], null, 2)}\n`, "utf8");
+  const createdAt = new Date().toISOString();
+  const { error: uploadError } = await client.storage.from(bucket).upload(id, Buffer.from(verifiedImage.bytes), {
+    contentType: verifiedImage.type,
+    cacheControl: "31536000",
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  const record: MediaRecord = { id, name: safeName, type: verifiedImage.type, size: verifiedImage.bytes.byteLength, createdAt };
+  const { error: metadataError } = await client.from("media_assets").insert({
+    id, name: safeName, type: verifiedImage.type, size: record.size, object_path: id, created_at: createdAt,
+  });
+  if (metadataError) {
+    await client.storage.from(bucket).remove([id]);
+    throw metadataError;
+  }
   return record;
 }
 
 export async function deleteMedia(id: string) {
-  const records = await listMedia();
-  const record = records.find((item) => item.id === id);
-  if (!record) return null;
-  const { unlink } = await import("node:fs/promises");
-  await unlink(path.join(uploadsDirectory, id));
-  await writeFile(mediaFile, `${JSON.stringify(records.filter((item) => item.id !== id), null, 2)}\n`, "utf8");
-  return record;
+  const client = createAdminSupabaseClient();
+  if (!client) throw new Error("Supabase server configuration is missing.");
+  const { data, error } = await client.from("media_assets").select("id, name, type, size, created_at, object_path").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const { error: removeError } = await client.storage.from(bucket).remove([data.object_path as string]);
+  if (removeError) throw removeError;
+  const { error: deleteError } = await client.from("media_assets").delete().eq("id", id);
+  if (deleteError) throw deleteError;
+  return { id: data.id as string, name: data.name as string, type: data.type as string, size: Number(data.size), createdAt: data.created_at as string };
 }
 
 export async function readMediaFile(id: string) {
-  const record = (await listMedia()).find((item) => item.id === id);
+  const client = createAdminSupabaseClient();
+  if (!client) throw new Error("Supabase server configuration is missing.");
+  const { data: record, error } = await client.from("media_assets").select("id, name, type, size, created_at, object_path").eq("id", id).maybeSingle();
+  if (error) throw error;
   if (!record) return null;
-  const bytes = await readFile(path.join(uploadsDirectory, id));
+  const { data: blob, error: downloadError } = await client.storage.from(bucket).download(record.object_path as string);
+  if (downloadError || !blob) return null;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   const type = sniffImageType(bytes);
-  if (!type) return null;
-  return { record: { ...record, type }, bytes };
+  if (!type || type !== record.type) return null;
+  return {
+    record: { id: record.id as string, name: record.name as string, type, size: Number(record.size), createdAt: record.created_at as string },
+    bytes,
+  };
 }
