@@ -957,7 +957,7 @@ export function AdminDashboard() {
               <div className="admin-local-note">
                 <WandSparkles size={17} />
                 <p>
-                  <b>تخزين سحابي:</b> الصور محفوظة في Supabase ويمكن استخدامها
+                  <b>تخزين سحابي:</b> الصور محفوظة في قاعدة بيانات PostgreSQL ويمكن استخدامها
                   في محتوى الموقع. الحد الأقصى 3 ميغابايت للصورة. النسخ يضع الصورة في الحافظة بصيغة PNG.
                 </p>
                 <button

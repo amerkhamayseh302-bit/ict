@@ -12,16 +12,16 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "db:init": "tsx scripts/init-db.ts",
     "links:check": "tsx scripts/check-links.ts",
     "content:validate": "tsx scripts/import-content.ts"
   },
   "dependencies": {
-    "@supabase/ssr": "0.12.7",
-    "@supabase/supabase-js": "2.118.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "next": "16.4.3",
     "nodemailer": "10.2.1",
+    "pg": "^8.23.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tailwind-merge": "^3.3.1",
@@ -30,6 +30,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^22.15.30",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.28.0",

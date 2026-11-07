@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
       securityHeaders.push(
         {
           key: "Content-Security-Policy",
-          value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; upgrade-insecure-requests",
+          value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; upgrade-insecure-requests",
         },
         { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
       );

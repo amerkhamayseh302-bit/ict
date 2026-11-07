@@ -9,7 +9,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/media/[
   try {
     const image = await readMediaFile(id);
     if (!image) return NextResponse.json({ error: "الصورة غير موجودة." }, { status: 404 });
-    return new Response(image.bytes, { headers: {
+    return new Response(Buffer.from(image.bytes), { headers: {
       "Content-Type": image.record.type,
       "Content-Length": String(image.bytes.byteLength),
       "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(image.record.name)}`,

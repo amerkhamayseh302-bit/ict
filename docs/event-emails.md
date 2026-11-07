@@ -1,10 +1,13 @@
 # إرسال الفعاليات عبر البريد
 
-## تجهيز Supabase
+## تجهيز قاعدة بيانات PostgreSQL
 
-1. افتح Supabase Dashboard ثم SQL Editor.
-2. انسخ محتوى `docs/event-email-dispatch.sql` وشغّله مرة واحدة.
-3. من إعدادات المشروع افتح API Keys وانسخ المفتاح السري إلى `SUPABASE_SECRET_KEY` في `.env.local`. لا تستخدم بادئة `NEXT_PUBLIC_` ولا ترسل المفتاح لأحد.
+1. تأكد من ضبط `DATABASE_URL` في ملف `.env.local`.
+2. يتم تهيئة جداول المشتركين وسجلات الإرسال تلقائيًا، أو يمكنك تشغيل الأمر التالي يدويًا:
+
+```bash
+npm run db:init
+```
 
 ## تجهيز Gmail
 
@@ -13,7 +16,7 @@
 3. أضف إلى `.env.local`:
 
 ```dotenv
-SUPABASE_SECRET_KEY=sb_secret_...
+DATABASE_URL=postgresql://user:password@localhost:5432/ict_community
 GMAIL_USER=your-address@gmail.com
 GMAIL_APP_PASSWORD=your-16-character-app-password
 ```

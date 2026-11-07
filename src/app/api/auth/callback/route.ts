@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createMemberSupabaseClient, supabaseConfig } from "@/lib/member-auth";
+import { query } from "@/lib/db";
+import { isMemberAuthConfigured } from "@/lib/member-auth";
 import { getSiteUrl } from "@/lib/urls";
 
 export async function GET(request: NextRequest) {
@@ -11,13 +12,36 @@ export async function GET(request: NextRequest) {
     next?.startsWith(`/${locale}/`) && !next.startsWith("//") && !next.includes("\\")
       ? next
       : `/${locale}/account?confirmed=1`;
-  const code = request.nextUrl.searchParams.get("code");
 
-  if (!code || !supabaseConfig()) {
-    return NextResponse.redirect(new URL(fallback, siteUrl), { headers: { "Cache-Control": "no-store" } });
+  const token = request.nextUrl.searchParams.get("token");
+
+  if (!token || !isMemberAuthConfigured()) {
+    return NextResponse.redirect(new URL(fallback, siteUrl), {
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
-  const supabase = await createMemberSupabaseClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  return NextResponse.redirect(new URL(error ? fallback : safeNext, siteUrl), { headers: { "Cache-Control": "no-store" } });
+  try {
+    const result = await query(
+      `UPDATE members
+       SET email_confirmed_at = NOW(), confirmation_token = NULL
+       WHERE confirmation_token = $1 AND email_confirmed_at IS NULL
+       RETURNING id`,
+      [token],
+    );
+
+    if (result.rowCount === 0) {
+      return NextResponse.redirect(new URL(fallback, siteUrl), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+
+    return NextResponse.redirect(new URL(safeNext, siteUrl), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return NextResponse.redirect(new URL(fallback, siteUrl), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 }

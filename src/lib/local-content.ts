@@ -1,7 +1,8 @@
 import "server-only";
 
 import { catalog, type CatalogItem, type CatalogType } from "@/features/catalog";
-import { createAdminSupabaseClient } from "@/lib/admin-supabase";
+import { query, withTransaction, isDbConfigured } from "@/lib/db";
+import { ensureSchema } from "@/lib/db-init";
 
 export type ContentRecord = CatalogItem & {
   id: string;
@@ -27,43 +28,87 @@ const seededContent: ContentRecord[] = catalog.map((item) => ({
 type ContentRow = { id: string; record: ContentRecord; is_deleted: boolean };
 
 export async function readContent(): Promise<ContentRecord[]> {
-  const client = createAdminSupabaseClient();
-  if (!client) return seededContent;
+  if (!isDbConfigured()) return seededContent;
 
-  const { data, error } = await client
-    .from("site_content_records")
-    .select("id, record, is_deleted");
-  if (error) throw error;
+  try {
+    await ensureSchema();
+    const result = await query<ContentRow>(
+      `SELECT id, record, is_deleted FROM site_content_records`,
+    );
 
-  const records = new Map(seededContent.map((item) => [item.id, item]));
-  for (const row of (data ?? []) as ContentRow[]) {
-    if (row.is_deleted) records.delete(row.id);
-    else records.set(row.id, row.record);
+    const records = new Map(seededContent.map((item) => [item.id, item]));
+    for (const row of result.rows) {
+      if (row.is_deleted) {
+        records.delete(row.id);
+      } else {
+        records.set(row.id, row.record);
+      }
+    }
+    return [...records.values()].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    );
+  } catch (error) {
+    console.error("Failed to read content from PostgreSQL:", error);
+    return seededContent;
   }
-  return [...records.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function writeContent(items: ContentRecord[]) {
-  const client = createAdminSupabaseClient();
-  if (!client) throw new Error("Supabase server configuration is missing.");
-
-  const { data, error } = await client.from("site_content_records").select("id, record");
-  if (error) throw error;
-  const previous = new Map(((data ?? []) as Array<{ id: string; record: ContentRecord }>).map((row) => [row.id, row.record]));
-  const incomingIds = new Set(items.map((item) => item.id));
-  const rows = items.map((record) => ({ id: record.id, record, is_deleted: false, updated_at: new Date().toISOString() }));
-
-  // [SECURITY FIX]: Store deletions as tombstones so deleted built-in records do not reappear from the seed catalog.
-  for (const base of seededContent) {
-    if (!incomingIds.has(base.id)) rows.push({ id: base.id, record: base, is_deleted: true, updated_at: new Date().toISOString() });
+  if (!isDbConfigured()) {
+    throw new Error("إعدادات قاعدة بيانات PostgreSQL غير مكتملة.");
   }
-  for (const [id, record] of previous) {
-    if (!incomingIds.has(id) && !seededContent.some((item) => item.id === id)) {
-      rows.push({ id, record, is_deleted: true, updated_at: new Date().toISOString() });
+
+  await ensureSchema();
+
+  await withTransaction(async (client) => {
+    const existingResult = await client.query<{ id: string; record: ContentRecord }>(
+      `SELECT id, record FROM site_content_records`,
+    );
+    const previous = new Map(
+      existingResult.rows.map((row) => [row.id, row.record]),
+    );
+
+    const incomingIds = new Set(items.map((item) => item.id));
+    const now = new Date().toISOString();
+
+    const rows: Array<{
+      id: string;
+      record: ContentRecord;
+      is_deleted: boolean;
+      updated_at: string;
+    }> = items.map((record) => ({
+      id: record.id,
+      record,
+      is_deleted: false,
+      updated_at: now,
+    }));
+
+    // Tombstones for seeded content removed by admin
+    for (const base of seededContent) {
+      if (!incomingIds.has(base.id)) {
+        rows.push({ id: base.id, record: base, is_deleted: true, updated_at: now });
+      }
     }
-  }
-  const { error: upsertError } = await client.from("site_content_records").upsert(rows, { onConflict: "id" });
-  if (upsertError) throw upsertError;
+
+    // Tombstones for previously stored records removed by admin
+    for (const [id, record] of previous) {
+      if (!incomingIds.has(id) && !seededContent.some((item) => item.id === id)) {
+        rows.push({ id, record, is_deleted: true, updated_at: now });
+      }
+    }
+
+    for (const row of rows) {
+      await client.query(
+        `INSERT INTO site_content_records (id, record, is_deleted, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE
+         SET record = EXCLUDED.record,
+             is_deleted = EXCLUDED.is_deleted,
+             updated_at = EXCLUDED.updated_at`,
+        [row.id, JSON.stringify(row.record), row.is_deleted, row.updated_at],
+      );
+    }
+  });
 }
 
 export async function readCategories(): Promise<Record<CatalogType, string[]>> {
@@ -77,23 +122,44 @@ export async function readCategories(): Promise<Record<CatalogType, string[]>> {
     ]),
   ) as Record<CatalogType, Set<string>>;
 
-  const client = createAdminSupabaseClient();
-  if (client) {
-    const { data, error } = await client.from("site_categories").select("type, name");
-    if (error) throw error;
-    for (const row of data ?? []) {
-      if (row.type in categories) categories[row.type as CatalogType].add(row.name as string);
+  if (isDbConfigured()) {
+    try {
+      await ensureSchema();
+      const result = await query<{ type: string; name: string }>(
+        `SELECT type, name FROM site_categories`,
+      );
+      for (const row of result.rows) {
+        if (row.type in categories) {
+          categories[row.type as CatalogType].add(row.name);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to read categories from PostgreSQL:", error);
     }
   }
-  return Object.fromEntries(Object.entries(categories).map(([type, names]) => [type, [...names]])) as Record<CatalogType, string[]>;
+
+  return Object.fromEntries(
+    Object.entries(categories).map(([type, names]) => [type, [...names]]),
+  ) as Record<CatalogType, string[]>;
 }
 
 export async function writeCategories(categories: Record<CatalogType, string[]>) {
-  const client = createAdminSupabaseClient();
-  if (!client) throw new Error("Supabase server configuration is missing.");
-  const rows = (Object.entries(categories) as Array<[CatalogType, string[]]>).flatMap(([type, names]) =>
-    [...new Set(names)].map((name) => ({ type, name })),
-  );
-  const { error } = await client.from("site_categories").upsert(rows, { onConflict: "type,name", ignoreDuplicates: true });
-  if (error) throw error;
+  if (!isDbConfigured()) {
+    throw new Error("إعدادات قاعدة بيانات PostgreSQL غير مكتملة.");
+  }
+
+  await ensureSchema();
+
+  await withTransaction(async (client) => {
+    for (const [type, names] of Object.entries(categories)) {
+      for (const name of new Set(names)) {
+        await client.query(
+          `INSERT INTO site_categories (type, name)
+           VALUES ($1, $2)
+           ON CONFLICT (type, name) DO NOTHING`,
+          [type, name],
+        );
+      }
+    }
+  });
 }

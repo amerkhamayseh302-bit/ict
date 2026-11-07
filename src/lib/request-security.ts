@@ -14,15 +14,36 @@ export function isSameOriginMutation(request: Request) {
   if (!origin || fetchSite === "cross-site") return false;
 
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const originUrl = new URL(origin);
+    const requestUrl = new URL(request.url);
+    if (originUrl.origin === requestUrl.origin) return true;
+
+    // Support reverse proxies (Vercel, Railway, Nginx) matching host & proto
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const proto = request.headers.get("x-forwarded-proto") || requestUrl.protocol.replace(":", "");
+    if (host && originUrl.host === host && originUrl.protocol === `${proto}:`) {
+      return true;
+    }
+
+    // Check against configured site URL
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (siteUrl && originUrl.origin === new URL(siteUrl).origin) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
 }
 
 function clientKey(request: Request, scope: string) {
-  // [SECURITY FIX]: Only use the single IP field set by a trusted reverse proxy; never persist raw IP addresses.
-  const candidate = request.headers.get("x-real-ip")?.trim() || "";
+  // [SECURITY FIX]: Identify client IP safely across reverse proxies (Vercel, Cloudflare, Nginx)
+  const candidate =
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    "";
   const address = isIP(candidate) ? candidate : "unknown";
   const digest = createHash("sha256").update(address).digest("hex").slice(0, 32);
   return `${scope}:${digest}`;
